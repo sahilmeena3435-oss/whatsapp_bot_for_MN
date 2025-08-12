@@ -4,44 +4,49 @@ import os
 
 app = Flask(__name__)
 
-ACCESS_TOKEN = "EAA6ijAIaH6MBPDGRiR4Ju3KG5O1YIj2Wb0sRPk0BLvE57NnQhe6y07x8MxJN35tuNuBgMwf5E9dHOJHZALXZBeTMLStAXNowcteTubU0mXNDfOL0hOC2NZBfzCt8rqmVUT7OV9qK5ZBRP8hbt2mJcS2APZBekWP2k0Vqeq522bI9QwdcchKvv1M15HBD9zuraFViZBoWyV8OEofdoan3kw90Hqb2nfhOsZCH4nM6CcwGHttK4QZD"
-PHONE_NUMBER_ID = "764448353413111"
-VERIFY_TOKEN = "testwebhook"  # Use the same token you entered in Meta verification
+VERIFY_TOKEN = "my_wp_bot_token"  # set same as in Meta webhook setup
+WHATSAPP_TOKEN = "EAA6ijAIaH6MBPKcBx4W5jQK2B4MLYXiTSuodxl0biMlvJsfuZCRlVRreGgkBMjnrDuNrbYC3nDcxx1NwXfX64d55ZAIZChyQYPTJg1h1qc8oqnTKYyLlz1I9ZClDvKgELqdZCF8tVUgRmAES7ZCF3QwUBtVfdD4h1lf3iUDgeDVF1j6jc4ZC8E3BmZAEaZAVaXiI4UVYvoWwz9IpaZCucZBHKNp7gJkwxQHAyZBQbLAtIIqp2IteHwZDZD"  # from Meta developer page
 
-def send_message(to, text):
-    url = f"https://graph.facebook.com/v17.0/{PHONE_NUMBER_ID}/messages"
-    headers = {
-        "Authorization": f"Bearer {ACCESS_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    data = {
-        "messaging_product": "whatsapp",
-        "to": to,
-        "type": "text",
-        "text": {"body": text}
-    }
-    requests.post(url, headers=headers, json=data)
-
-@app.route("/webhook", methods=["GET"])
-def verify():
-    if request.args.get("hub.verify_token") == VERIFY_TOKEN:
-        return request.args.get("hub.challenge")
-    return "Error", 403
-
-@app.route("/webhook", methods=["POST"])
+@app.route("/webhook", methods=["GET", "POST"])
 def webhook():
-    data = request.get_json()
-    print("Incoming webhook data:", data)  # Print to Render logs
+    if request.method == "GET":
+        # Verification
+        if request.args.get("hub.verify_token") == VERIFY_TOKEN:
+            return request.args.get("hub.challenge")
+        return "Verification failed", 403
 
-    try:
-        if "messages" in str(data):
-            message = data["entry"][0]["changes"][0]["value"]["messages"][0]
-            from_number = message["from"]
-            text = message["text"]["body"]
-            send_message(from_number, f"You said: {text}")
-    except Exception as e:
-        print("Error:", e)
-    return "ok", 200
+    elif request.method == "POST":
+        data = request.get_json()
+        print(data)  # log to Render console
+
+        try:
+            # Extract message text and sender
+            entry = data["entry"][0]
+            changes = entry["changes"][0]
+            value = changes["value"]
+            messages = value.get("messages")
+            if messages:
+                phone_number_id = value["metadata"]["phone_number_id"]
+                from_number = messages[0]["from"]
+                message_body = messages[0]["text"]["body"]
+
+                # Send auto-reply
+                url = f"https://graph.facebook.com/v21.0/{phone_number_id}/messages"
+                payload = {
+                    "messaging_product": "whatsapp",
+                    "to": from_number,
+                    "text": {"body": f"You said: {message_body}"}
+                }
+                headers = {
+                    "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+                    "Content-Type": "application/json"
+                }
+                requests.post(url, json=payload, headers=headers)
+        except Exception as e:
+            print("Error:", e)
+
+        return "EVENT_RECEIVED", 200
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
